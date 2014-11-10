@@ -13,11 +13,12 @@ long pos = -999;
 // LEDs
 const int ledBase = 5;                // pin at which LED bar graph starts
 const int ledCount = 4;               // how many LEDs are connected
-int ledSelected = -1;
+byte portSelected = 0;
 
 // Other variables
 #define MAX_TITLE_LEN 40
 #define NUM_PORTS 4
+#define SELECTED_PORT_ADDR 192        // EEPROM address for the most recently selected port
 int i, j;
 char portTitles[NUM_PORTS][MAX_TITLE_LEN];
 char c;
@@ -25,7 +26,7 @@ char serialBuffer[MAX_TITLE_LEN+1];
 int bufPos = 0;
 byte editMode = false;
 byte editPort = 0;
-const int K1 = 10;                     // Relay port: K1
+const int K1 = 10;                    // Relay port: K1
 const int K2 = 12;                    // Relay port: K2
 byte relayStates[NUM_PORTS][2] = {
   {LOW, LOW},
@@ -67,7 +68,7 @@ void displayPortTitles() {
   Serial.println("RCS-4 Antenna/Rig Switch");
   Serial.println("----------------------------------------");
   for (i = 0; i < NUM_PORTS; i++) {
-    if (ledSelected == i) {
+    if (portSelected == i) {
       Serial.print("*");
     } else {
       Serial.print(" ");
@@ -89,13 +90,15 @@ void displayMenu() {
 // This will soon also trigger relays (or BJTs) to feed bias to remote switchbox
 void updateLEDs() {
   for (i = 0; i < ledCount; i++) {
-    digitalWrite(ledBase+i, (i == ledSelected ? HIGH : LOW));
+    digitalWrite(ledBase+i, (i == portSelected ? HIGH : LOW));
   }
 }
 
 void selectPort() {
-  digitalWrite(K1, relayStates[ledSelected][0]);
-  digitalWrite(K2, relayStates[ledSelected][1]);
+  digitalWrite(K1, relayStates[portSelected][0]);
+  digitalWrite(K2, relayStates[portSelected][1]);
+  EEPROM.write(SELECTED_PORT_ADDR, portSelected);
+  updateLEDs();
 }
 
 void dumpEEPROM() {
@@ -140,9 +143,8 @@ void handleInput() {
   } else {
     c = serialBuffer[0];
     if (c > '0' && c <= ('0' + NUM_PORTS)) {  // ASCII number values 1-4
-      ledSelected = (c - '0') - 1;
+      portSelected = (c - '0') - 1;
       selectPort();
-      updateLEDs();
       displayMenu();
     } else if (c == 'e' || c == 'E') {
       // Edit mode
@@ -181,6 +183,9 @@ void setup() {
     pinMode(ledBase+i, OUTPUT);
     digitalWrite(ledBase+i, LOW);
   }
+  pos = knob.read();               // Avoid needlessly incrementing selected port
+  portSelected = EEPROM.read(SELECTED_PORT_ADDR);
+  selectPort();
   readPortTitles();
 }
 
@@ -194,13 +199,12 @@ void loop() {
   newPos = knob.read();
   if (newPos != pos) {
     if (newPos > pos) { // Rotated CW
-      ledSelected = ((ledSelected + 1) >= ledCount ? (0) : (ledSelected + 1));
+      portSelected = ((portSelected + 1) >= ledCount ? (0) : (portSelected + 1));
     } else { // Rotated CCW
-      ledSelected = ((ledSelected - 1) < 0 ? (ledCount - 1) : (ledSelected - 1));
+      portSelected = ((portSelected - 1) < 0 ? (ledCount - 1) : (portSelected - 1));
     }
     pos = newPos;
     selectPort();
-    updateLEDs();
   }
   
   if (Serial.available() > 0) {
@@ -209,6 +213,12 @@ void loop() {
       serialBuffer[bufPos++] = 0;
       Serial.println();
       handleInput();
+    } else if (c == 8 || c == 127) {
+      serialBuffer[--bufPos] = 0;
+      Serial.write(8);                // Print a backspace
+      Serial.write(32);               // Print a space to erase the previously-typed char
+      Serial.write(8);                // Print a backspace
+      Serial.flush();
     } else {
       serialBuffer[bufPos++] = c;
       Serial.print(c);
