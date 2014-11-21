@@ -34,6 +34,8 @@ byte relayStates[NUM_PORTS][2] = {
   {HIGH, LOW},
   {HIGH, HIGH},
 };
+const int K3 = 23;                     // KPA500 keying relay port
+byte amp_keyed = false;
 
 void readPortTitles() {
   // Read port titles from EEPROM
@@ -78,6 +80,14 @@ void displayPortTitles() {
     Serial.print(portTitles[i]);
     Serial.println();
   }
+  Serial.println();
+  Serial.print("Amp status: ");
+  if (amp_keyed) {
+    Serial.println("KEYED");
+  } else {
+    Serial.println("not keyed");
+  }
+  Serial.println();
 }
 
 void displayMenu() {
@@ -85,6 +95,7 @@ void displayMenu() {
   Serial.println();
   Serial.println("* selected");
   Serial.println("'En' to edit port n's title (e.g. E1). Number to switch to that port.");
+  Serial.println("'A' to toggle amp key-down state.");
 }
 
 // This will soon also trigger relays (or BJTs) to feed bias to remote switchbox
@@ -125,6 +136,16 @@ void dumpEEPROM() {
   }
 }
 
+void toggleAmpKeyDown() {
+  if (amp_keyed) {
+    amp_keyed = false;
+    digitalWrite(K3, LOW);
+  } else {
+    amp_keyed = true;
+    digitalWrite(K3, HIGH);  // Key the relay coil to sink KPA500 keying to ground
+  }  
+}
+
 void handleInput() {
   if (editMode == true) {
     // User has just entered a string, stored in serialBuffer, of length bufPos.
@@ -163,6 +184,8 @@ void handleInput() {
       }
     } else if (c == 'd' || c == 'D') {
       dumpEEPROM();
+    } else if (c == 'a' || c == 'A') {
+      toggleAmpKeyDown();
     } else {
       displayMenu();
     }
@@ -179,6 +202,8 @@ void setup() {
   digitalWrite(K1, LOW);
   pinMode(K2, OUTPUT);
   digitalWrite(K2, LOW);
+  pinMode(K3, OUTPUT);
+  digitalWrite(K3, LOW);
   for (i = 0; i < ledCount; i++) {
     pinMode(ledBase+i, OUTPUT);
     digitalWrite(ledBase+i, LOW);
